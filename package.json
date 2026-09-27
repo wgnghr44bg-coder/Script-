@@ -1,0 +1,27 @@
+{
+  "name": "scriptschrijver",
+  "version": "1.0.0",
+  "description": "Schrijft met Claude scripts van ~20.000 woorden",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "cli": "node src/cli.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wgnghr44bg-coder/Script-.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/wgnghr44bg-coder/Script-/issues"
+  },
+  "homepage": "https://github.com/wgnghr44bg-coder/Script-#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  }
+}

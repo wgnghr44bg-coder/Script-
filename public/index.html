@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scriptschrijver</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1d1b18; --muted:#6b665d; --accent:#b4471f; --line:#e2ddd2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161513; --card:#1f1d1a; --ink:#ece8e0; --muted:#a39d91; --accent:#e0764c; --line:#34312c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 1.8rem; }
+  p.sub { margin: 0 0 24px; color: var(--muted); }
+  form, .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  label { display:block; font-weight:600; margin: 12px 0 4px; }
+  textarea, input, select { width:100%; padding:10px; font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; }
+  button { margin-top:16px; padding:12px 20px; font:inherit; font-weight:600; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); margin-left:8px; }
+  .panel { margin-top:20px; }
+  .progress { height:10px; background:var(--line); border-radius:5px; overflow:hidden; }
+  .progress > div { height:100%; width:0; background:var(--accent); transition: width .3s; }
+  .status { margin:8px 0 0; color:var(--muted); font-size:.95rem; }
+  ol.sections { padding-left: 20px; margin: 12px 0 0; }
+  ol.sections li { margin: 4px 0; }
+  ol.sections li.active { font-weight:600; }
+  ol.sections li.done { color: var(--muted); }
+  pre { white-space: pre-wrap; word-wrap: break-word; font: 14px/1.6 "Courier Prime", "Courier New", monospace; max-height: 70vh; overflow:auto; margin:0; }
+  .error { color: #c0392b; font-weight:600; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Scriptschrijver</h1>
+  <p class="sub">Schrijft met Claude een compleet script van ongeveer 20.000 woorden: eerst een outline, daarna deel voor deel.</p>
+
+  <form id="form">
+    <label for="premise">Idee / premisse</label>
+    <textarea id="premise" required placeholder="Bijv. Een vuurtorenwachter op Terschelling ontdekt dat de berichten in aangespoelde flessen over zijn eigen toekomst gaan..."></textarea>
+    <div class="row">
+      <div>
+        <label for="format">Soort script</label>
+        <select id="format">
+          <option value="film">Speelfilm</option>
+          <option value="serie">Tv-serie (aflevering)</option>
+          <option value="toneel">Toneelstuk</option>
+          <option value="hoorspel">Hoorspel / podcast</option>
+          <option value="youtube">YouTube / documentaire</option>
+        </select>
+      </div>
+      <div>
+        <label for="genre">Genre</label>
+        <input id="genre" placeholder="Bijv. thriller, drama, komedie">
+      </div>
+      <div>
+        <label for="language">Taal</label>
+        <input id="language" value="Nederlands">
+      </div>
+      <div>
+        <label for="targetWords">Aantal woorden</label>
+        <input id="targetWords" type="number" min="1000" max="50000" step="1000" value="20000">
+      </div>
+    </div>
+    <label for="notes">Extra wensen (optioneel)</label>
+    <textarea id="notes" style="min-height:60px" placeholder="Toon, doelgroep, personages, einde..."></textarea>
+    <button id="go" type="submit">Schrijf script</button>
+  </form>
+
+  <section id="progressPanel" class="panel hidden">
+    <div class="progress"><div id="bar"></div></div>
+    <p class="status" id="status">Bezig…</p>
+    <ol class="sections" id="sections"></ol>
+  </section>
+
+  <section id="outputPanel" class="panel hidden">
+    <div style="margin-bottom:12px">
+      <strong id="scriptTitle"></strong>
+      <button id="download" class="secondary" type="button" disabled>Download .txt</button>
+      <button id="copy" class="secondary" type="button" disabled>Kopieer</button>
+    </div>
+    <pre id="output"></pre>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let scriptText = "";
+let title = "script";
+let target = 20000;
+let written = 0;
+
+function countWords(t) { const m = t.trim().match(/\S+/g); return m ? m.length : 0; }
+function setStatus(msg, isError) { $("status").textContent = msg; $("status").className = "status" + (isError ? " error" : ""); }
+function updateBar() { $("bar").style.width = Math.min(100, (written / target) * 100) + "%"; }
+
+function handle(ev) {
+  if (ev.type === "outline") {
+    title = ev.outline.title;
+    $("scriptTitle").textContent = title;
+    scriptText = title.toUpperCase() + "\n\n";
+    $("output").textContent = scriptText;
+    $("sections").innerHTML = ev.outline.sections.map((s, i) => `<li id="sec${i}"></li>`).join("");
+    ev.outline.sections.forEach((s, i) => { $("sec" + i).textContent = s.title; });
+    $("outputPanel").classList.remove("hidden");
+    setStatus(`Outline klaar: ${ev.outline.sections.length} delen. Schrijven begint…`);
+  } else if (ev.type === "section_start") {
+    $("sec" + ev.index).className = "active";
+    setStatus(`Deel ${ev.index + 1} schrijven (~${ev.goal} woorden)…`);
+  } else if (ev.type === "text") {
+    scriptText += ev.text;
+    $("output").textContent = scriptText;
+    const pre = $("output");
+    if (pre.scrollHeight - pre.scrollTop - pre.clientHeight < 200) pre.scrollTop = pre.scrollHeight;
+    written = countWords(scriptText);
+    updateBar();
+    setStatus(`${written.toLocaleString("nl-NL")} / ${target.toLocaleString("nl-NL")} woorden`);
+  } else if (ev.type === "section_done") {
+    $("sec" + ev.index).className = "done";
+    $("sec" + ev.index).textContent += ` — ${ev.words.toLocaleString("nl-NL")} woorden`;
+    scriptText = scriptText.trimEnd() + "\n\n";
+  } else if (ev.type === "done") {
+    written = ev.words; updateBar();
+    setStatus(`Klaar! ${ev.words.toLocaleString("nl-NL")} woorden. Ook opgeslagen als output/${ev.file}`);
+  } else if (ev.type === "error") {
+    setStatus("Fout: " + ev.message, true);
+  }
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  target = Number($("targetWords").value) || 20000;
+  written = 0; scriptText = ""; updateBar();
+  $("go").disabled = true; $("download").disabled = true; $("copy").disabled = true;
+  $("output").textContent = ""; $("sections").innerHTML = "";
+  $("progressPanel").classList.remove("hidden");
+  setStatus("Outline maken…");
+
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        premise: $("premise").value, format: $("format").value, genre: $("genre").value,
+        language: $("language").value, targetWords: target, notes: $("notes").value,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        if (line.trim()) handle(JSON.parse(line));
+      }
+    }
+  } catch (err) {
+    setStatus("Fout: " + err.message, true);
+  } finally {
+    $("go").disabled = false;
+    if (scriptText.trim()) { $("download").disabled = false; $("copy").disabled = false; }
+  }
+});
+
+$("download").addEventListener("click", () => {
+  const blob = new Blob([scriptText], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (title.replace(/[^\p{L}\p{N}]+/gu, "-") || "script") + ".txt";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$("copy").addEventListener("click", () => navigator.clipboard.writeText(scriptText));
+</script>
+</body>
+</html>
